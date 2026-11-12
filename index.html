@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Alerta Cámaras LA</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#0f1115;--card:#1a1d24;--line:#2a2e38;--tx:#eef0f4;--mut:#9aa1ad;--ok:#2fbf71;--warn:#f5a524;--bad:#ef4444;--acc:#3b82f6}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 -apple-system,system-ui,Segoe UI,Roboto,sans-serif}
+body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{padding:14px 16px 6px;display:flex;align-items:center;justify-content:space-between}
+h1{font-size:18px;margin:0}
+.pill{font-size:12px;padding:4px 10px;border-radius:99px;background:var(--card);border:1px solid var(--line);color:var(--mut)}
+.pill.on{color:var(--ok);border-color:var(--ok)}
+main{padding:0 16px 24px;max-width:640px;margin:0 auto}
+.hero{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin-top:8px;transition:background .3s,border-color .3s}
+.hero.alert{background:#3a1212;border-color:var(--bad)}
+.hero.near{background:#3a2a0e;border-color:var(--warn)}
+.lbl{font-size:13px;color:var(--mut)}
+.dist{font-size:52px;font-weight:700;letter-spacing:-1px;margin:2px 0}
+.street{font-size:19px;font-weight:600}
+.seg{font-size:14px;color:var(--mut)}
+.row{display:flex;gap:10px;margin-top:14px}
+.box{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.box b{display:block;font-size:26px}
+.box.over b{color:var(--bad)}
+.sign{display:inline-flex;flex-direction:column;align-items:center;background:#fff;color:#000;border:3px solid #000;border-radius:6px;padding:2px 8px;line-height:1}
+.sign small{font-size:9px;font-weight:700}.sign b{font-size:24px}
+button{font:inherit;border:0;border-radius:14px;padding:16px;width:100%;font-weight:700;font-size:18px;cursor:pointer}
+#go{background:var(--acc);color:#fff;margin-top:14px}
+#go.stop{background:#374151}
+.opts{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.opts label{font-size:14px;color:var(--mut);display:flex;align-items:center;gap:6px}
+select{font:inherit;background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:10px;padding:8px}
+#map{height:300px;border-radius:16px;margin-top:14px;border:1px solid var(--line)}
+h2{font-size:15px;margin:20px 0 8px;color:var(--mut);font-weight:600}
+ul{list-style:none;margin:0;padding:0}
+li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+li .s{font-weight:600}li .m{font-size:13px;color:var(--mut)}
+.d{font-weight:700;white-space:nowrap}
+.tag{font-size:11px;padding:2px 7px;border-radius:99px;margin-left:6px;vertical-align:middle}
+.tag.live{background:#163b26;color:var(--ok)}.tag.build{background:#2b2f39;color:var(--mut)}.tag.unk{background:#2b2f39;color:var(--mut)}
+#msg{font-size:14px;color:var(--warn);margin-top:10px;min-height:1em}
+input[type=search]{width:100%;font:inherit;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--tx)}
+footer{font-size:12px;color:var(--mut);margin-top:20px;line-height:1.5}
+a{color:#7fb0ff}
+</style>
+</head>
+<body>
+<header><h1>📷 Alerta Cámaras LA</h1><span id="st" class="pill">Apagado</span></header>
+<main>
+  <div id="hero" class="hero">
+    <div class="lbl">Cámara más cercana</div>
+    <div class="dist" id="dist">—</div>
+    <div class="street" id="street">Presiona “Iniciar” para empezar</div>
+    <div class="seg" id="seg">125 cámaras de LADOT cargadas</div>
+    <div class="row">
+      <div class="box" id="spdbox"><span class="lbl">Tu velocidad</span><b id="spd">—</b><span class="lbl">mph</span></div>
+      <div class="box"><span class="lbl">Límite en la cámara</span><div style="margin-top:4px"><span class="sign"><small>SPEED<br>LIMIT</small><b id="lim">—</b></span></div></div>
+    </div>
+    <button id="go">▶ Iniciar</button>
+    <div id="msg"></div>
+    <div class="opts">
+      <label>Avisar a <select id="rad"><option value="250">250 m</option><option value="400" selected>400 m (¼ milla)</option><option value="800">800 m (½ milla)</option></select></label>
+      <label>Voz <select id="voice"><option value="1" selected>Sí</option><option value="0">No</option></select></label>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <h2>Las más cercanas</h2>
+  <ul id="near"><li><span class="m">Se muestran cuando el GPS esté activo.</span></li></ul>
+
+  <h2>Todas las cámaras (125)</h2>
+  <input type="search" id="q" placeholder="Buscar calle… ej. Victory, Sunset">
+  <ul id="all" style="margin-top:8px"></ul>
+
+  <footer>
+    Datos: mapa oficial de LADOT (Speed Safety System, aprobado el 24 de marzo de 2026) y listas por distrito. “Activa” = LADOT la marca como funcionando (aviso o multa); las demás estaban en instalación según la lista más reciente, y LADOT espera tener las 125 activas para fin de 2026.<br>
+    Las cámaras multan desde 11 mph sobre el límite. Cada cámara nueva da 60 días de solo avisos.<br>
+    Mantén la pantalla encendida y la app abierta mientras manejas. No la uses con la mano al volante.
+  </footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const CAMS = [["1-1","Beverly Blvd","Belmont Ave","Witmer St",35,34.06298,-118.26213,"l"],["1-2","Cypress Ave","Cazador St","Macon St",30,34.10419,-118.23753,"b"],["1-3","N Figueroa St","W Avenue 45","S Cessna Ln",35,34.102,-118.20316,"b"],["1-4","S Figueroa St","W Adams Blvd","W 23rd St",30,34.0294,-118.27522,"b"],["1-5","W 8th St","S Westmoreland Ave","S Hoover St",35,34.05773,-118.28675,"l"],["1-6","W Olympic Blvd","Elden Ave","S Hoover St",35,34.05241,-118.28911,"b"],["1-7","W Washington Blvd","S New Hampshire Ave","S Vermont Ave",35,34.04,-118.29259,"b"],["1-8","Wilshire Blvd","S Rampart Blvd","S Park View St",35,34.06183,-118.28511,"b"],["2-1","Coldwater Canyon Ave","Vanowen St","Bassett St",35,34.19458,-118.4138,"l"],["2-2","Laurel Canyon Blvd","Archwood St","Vanowen St",40,34.1925,-118.39652,"l"],["2-3","Magnolia Blvd","Tujunga Ave","Klump Ave",35,34.1649,-118.3774,"b"],["2-4","Oxnard St","Ethel Ave","Coldwater Canyon Ave",35,34.17941,-118.41533,"l"],["2-5","Sherman Way","N Cedar Rd","Costello Ave",35,34.2012,-118.43866,"b"],["2-6","Vanowen St","Morse Ave","Goodland Ave",35,34.19395,-118.41406,"b"],["2-7","Victory Blvd","Ethel Ave","Coldwater Canyon Ave",35,34.18657,-118.41568,"b"],["2-8","Victory Blvd","Mammoth Ave","Ventura Canyon Ave",35,34.18667,-118.42922,"b"],["3-2","Reseda Blvd","Erwin St","Victory Blvd",35,34.18534,-118.53603,"b"],["3-6","Reseda Blvd","Wyandotte St","Valerio St",35,34.20317,-118.53606,"b"],["3-7","Sherman Way","Calvin Ave","Vanalden Ave",35,34.2011,-118.55183,"b"],["3-5","Vanowen St","Hatillo Ave","Corbin Ave",35,34.19382,-118.56281,"b"],["3-4","Ventura Blvd","Winnetka Ave","Quakertown Ave",40,34.17129,-118.57003,"b"],["3-8","Victory Blvd","Belmar Ave","Tampa Ave",45,34.18658,-118.5559,"b"],["3-1","Victory Blvd","Canby Ave","LA River",45,34.1866,-118.53858,"b"],["3-3","Winnetka Ave","Arminta St","Strathern St",35,34.21427,-118.57103,"b"],["4-6","Burbank Blvd","Kester Ave","Sepulveda Blvd",35,34.17211,-118.46206,"b"],["4-8","Fountain Ave","N Hoover St","Hyperion Ave",35,34.0958,-118.28063,"b"],["4-7","Franklin Ave","Cheremoya Ave","Tamarind Ave",35,34.10526,-118.31964,"l"],["4-5","Hollywood Blvd","N Vista St","Camino Palmero St",30,34.10165,-118.35094,"b"],["4-1","N Highland Ave","Franklin Pl","Camrose Dr",35,34.10619,-118.3375,"l"],["4-3","N Western Ave","Franklin Ave","Los Feliz Blvd",35,34.10842,-118.30617,"l"],["4-4","Sherman Way","Lindley Ave","Hesperia Ave",35,34.20113,-118.52675,"b"],["4-2","Victory Blvd","Newcastle Ave","LA River",45,34.18661,-118.52677,"b"],["4-9","White Oak Ave","Margate St","Ventura Blvd",40,34.16537,-118.51857,"b"],["5-7","Melrose Ave","N Hayworth Ave","N Orange Grove Ave",35,34.08379,-118.36023,"l"],["5-5","N Fairfax Ave","Clinton St","Waring Ave",35,34.08286,-118.36147,"l"],["5-3","N La Brea Ave","W 1st St","Beverly Blvd",30,34.07494,-118.34404,"l"],["5-1","S La Cienega Blvd","W 18th St","Horner St",35,34.04801,-118.37614,"b"],["5-2","S La Cienega Blvd","W Pico Blvd","W Olympic Blvd",35,34.05623,-118.37618,"l"],["5-6","W Olympic Blvd","Alvira St","Stearns Dr",35,34.05883,-118.36947,"b"],["5-8","W Olympic Blvd","Greenfield Ave","405 Fwy",35,34.03993,-118.43835,"b"],["5-4","W Olympic Blvd","S La Brea Ave","S Sycamore Ave",35,34.05718,-118.34376,"b"],["6-2","Balboa Blvd","Orange Line Busway","Archwood St",35,34.191,-118.50125,"b"],["6-1","Nordhoff St","Pacoima Wash","Cedros Ave",35,34.23545,-118.45581,"b"],["6-7","Sepulveda Blvd","Stagg St","Saticoy St",35,34.20956,-118.46621,"b"],["6-5","Vanowen St","Firmament Ave","Columbus Ave",35,34.19393,-118.46277,"b"],["6-4","Victory Blvd","Kester Ave","Cedros Ave",35,34.18666,-118.45892,"l"],["6-3","Victory Blvd","Louise Ave","High Tech LA East Dwy",45,34.18663,-118.5059,"b"],["6-8","Woodman Ave","Roscoe Blvd","Strathern St",35,34.21688,-118.43078,"b"],["6-9","Woodman Ave","Terra Bella St","Nordhoff St",35,34.23829,-118.44249,"b"],["6-6","Sherman Way","Kester Ave","Sherman Cir",35,34.20123,-118.45473,"b"],["7-3","Foothill Blvd","Newhome Ave","Sherman Grove Ave",35,34.25974,-118.32077,"u"],["7-4","Laurel Canyon Blvd","Pinney St","Hoyt St",40,34.25987,-118.43328,"u"],["7-6","Laurel Canyon Blvd","Wolfskill St","Pacoima Wash",40,34.26849,-118.44247,"u"],["7-7","Nordhoff St","Noble Ave","Pacoima Wash",35,34.23548,-118.45988,"u"],["7-5","Polk St","Glenoaks Blvd","Fellows Ave",35,34.30977,-118.44737,"u"],["7-1","Sepulveda Blvd","Tupper St","Plummer St",35,34.24112,-118.46755,"u"],["7-2","Van Nuys Blvd","5 Fwy","Laurel Canyon Blvd",35,34.25789,-118.43335,"u"],["7-8","Van Nuys Blvd","Herrick Ave","De Foe Ave",35,34.27237,-118.41351,"u"],["8-9","S Figueroa St","W 68th St","W Gage Ave",35,33.97842,-118.28281,"u"],["8-3","S Figueroa St","W Manchester Ave","W 85th St",35,33.96359,-118.28271,"u"],["8-6","S Normandie Ave","W 62nd St","W 64th St",35,33.98192,-118.30026,"u"],["8-2","S Vermont Ave","W Florence Ave","W 71st St",35,33.97796,-118.29165,"u"],["8-8","S Western Ave","W 55th St","W 53rd St",35,33.99463,-118.30894,"u"],["8-4","W Florence Ave","S Van Ness Ave","Haas Ave",35,33.97458,-118.31914,"u"],["8-1","W Florence Ave","S Vermont Ave","S Hoover St",35,33.97463,-118.28922,"u"],["8-5","W Gage Ave","S Halldale Ave","Raymond Ave",35,33.98235,-118.29875,"u"],["8-7","W Martin Luther King Jr Blvd","S Hobart Blvd","S Saint Andrews Pl",35,34.01085,-118.31162,"u"],["9-8","Avalon Blvd","E 77th St","E 74th St",35,33.97051,-118.26517,"u"],["9-3","E Manchester Ave","Wadsworth Ave","S Central Ave",35,33.96017,-118.25735,"u"],["9-6","E Vernon Ave","Hooper Ave","McKinley Ave",30,34.00391,-118.25525,"u"],["9-9","S Central Ave","E 92nd St","E 90th St",35,33.95475,-118.25643,"u"],["9-4","W Gage Ave","S Hoover St","S Figueroa St",35,33.98289,-118.28268,"u"],["9-2","W Slauson Ave","S Budlong Ave","Menlo Ave",35,33.99086,-118.2915,"u"],["9-5","S Figueroa St","W Gage Ave","W 62nd St",35,33.98237,-118.28498,"u"],["9-7","W Slauson Ave","Brentwood St","Inskeep Ave",35,33.98922,-118.27407,"u"],["9-1","S Vermont Ave","W 58th Pl","W 57th St",35,33.98912,-118.29164,"u"],["10-9","Arlington Ave","W 21st St","W 18th St",35,34.03876,-118.31773,"b"],["10-8","S La Brea Ave","Veronica St","Coliseum St",40,34.01517,-118.35552,"b"],["10-1","S La Cienega Blvd","3721 La Cienega Blvd","Bowesfield St",45,34.02026,-118.37243,"l"],["10-3","S La Cienega Blvd","Sawyer St","W 18th St",35,34.04379,-118.37669,"b"],["10-7","S Western Ave","W 24th St","W Adams Blvd",35,34.03399,-118.30898,"b"],["10-4","W 6th St","S Berendo St","S Vermont Ave",35,34.0636,-118.29314,"b"],["10-5","W Jefferson Blvd","Crenshaw Blvd","S Bronson Ave",35,34.0256,-118.33413,"b"],["10-2","W Olympic Blvd","Irolo St","Fedora St",35,34.05264,-118.2983,"b"],["10-6","W Washington Blvd","3rd Ave","S Van Ness Ave",35,34.03991,-118.31835,"b"],["11-5","La Tijera Blvd","W Manchester Ave","W 74th St",40,33.9653,-118.38531,"b"],["11-7","Mulholland Dr","Calneva Dr","Corda Dr",35,34.13123,-118.49075,"b"],["11-3","S Barrington Ave","Ohio Ave","Santa Monica Blvd",30,34.04579,-118.45787,"b"],["11-8","Slauson Ave","Braddock Dr","Culver Blvd",35,33.99824,-118.41504,"b"],["11-1","Venice Blvd","Lincoln Blvd","Pisani Pl",35,33.99308,-118.45467,"l"],["11-6","Vista Del Mar","City Limit","Culver Blvd",40,33.94777,-118.44396,"b"],["11-4","Washington Blvd","Marr St","Thatcher Ave",35,33.98817,-118.45221,"b"],["11-2","National Blvd","Butler Ave","405 Fwy",35,34.026,-118.43219,"l"],["12-2","Balboa Blvd","Tulsa St","118 Fwy",35,34.27394,-118.50219,"b"],["12-1","Balboa Blvd","Lassen St","Plummer St",35,34.24822,-118.50243,"l"],["12-4","Nordhoff St","Geyser Ave","Yolanda Ave",40,34.2356,-118.54048,"b"],["12-3","Nordhoff St","Petit Ave","Gothic Ave",40,34.23571,-118.49561,"l"],["12-5","Reseda Blvd","Kinzie St","Superior St",35,34.24798,-118.53611,"b"],["12-7","Sesnon Blvd","High Glen Way","Reseda Blvd",45,34.2971,-118.56134,"b"],["12-6","Tampa Ave","Merridy St","Lassen St",40,34.25135,-118.55346,"b"],["12-8","Valley Circle Blvd","Victory Blvd","Highlander Rd",45,34.19024,-118.65629,"b"],["13-7","W 3rd St","S Virgil Ave","S Commonwealth Ave",35,34.06899,-118.28627,"b"],["13-1","N Highland Ave","W Sunset Blvd","Hollywood Blvd",35,34.09988,-118.33869,"b"],["13-8","N Vermont Ave","Melrose Ave","Marathon St",30,34.08445,-118.29173,"b"],["13-5","Santa Monica Blvd","N Hobart Blvd","N Normandie Ave",35,34.09081,-118.30405,"l"],["13-2","W Sunset Blvd","N Bronson Ave","101 Fwy",30,34.09806,-118.31687,"b"],["13-4","W Sunset Blvd","N Sycamore Ave","N McCadden Pl",30,34.09797,-118.3406,"b"],["13-3","W Sunset Blvd","Rosemont Ave","N Alvarado St",35,34.07805,-118.26554,"b"],["13-6","Riverside Dr","Riverside Ter","Allesandro St",35,34.101,-118.2509,"b"],["14-2","E 4th St","S Mott Ave","S Evergreen Ave",35,34.03829,-118.20656,"u"],["14-1","E 4th St","S Pecan St","S Boyle Ave",35,34.043,-118.22086,"u"],["14-7","Huntington Dr","Topaz St","Monterey Rd",35,34.08481,-118.18908,"u"],["14-8","Marengo St","N Mission Rd","Lord St",35,34.0598,-118.21364,"u"],["14-4","S San Pedro St","E 6th St","Winston St",25,34.04381,-118.24417,"u"],["14-6","S Soto St","E 6th St","E 4th St",35,34.03954,-118.21245,"u"],["14-5","W 7th St","S Flower St","S Grand Ave",25,34.04805,-118.2578,"u"],["14-3","S San Pedro St","E 17th St","E 15th St",35,34.03064,-118.25532,"u"],["15-4","E 103rd St","Fifth Blvd","Grandee Ave",30,33.94321,-118.24462,"u"],["15-3","Grandee Ave","E 108th St","E Century Blvd",25,33.94343,-118.24352,"u"],["15-7","E Imperial Hwy","Avalon Blvd","Stanford Ave",35,33.93106,-118.26518,"u"],["15-1","N Avalon Blvd","W Sandison St","E N St",35,33.79222,-118.2634,"u"],["15-2","S Central Ave","E 114th St","E 109th St",35,33.93231,-118.25426,"u"],["15-6","S Gaffey St","W 2nd St","W 1st St",35,33.74225,-118.29232,"u"],["15-8","Vermont Ave","255th St","253rd St",35,33.793,-118.29084,"u"],["15-5","Wilmington Ave","E 113th St","E 110th St",35,33.93384,-118.2391,"u"]].map(r=>({id:r[0],cd:parseInt(r[0]),st:r[1],a:r[2],b:r[3],mph:r[4],lat:r[5],lng:r[6],s:{l:'live',b:'build',u:'unk'}[r[7]]}));
+const $ = id => document.getElementById(id);
+const STAT = {live:'Activa', build:'En instalación', unk:'Sin confirmar'};
+let watchId=null, wakeLock=null, audioCtx=null, me=null, meMarker=null, map=null;
+const alerted = new Map(); // id -> 'near' | 'alert'
+
+function hav(a,b,c,d){const R=6371000,r=Math.PI/180,x=(c-a)*r,y=(d-b)*r;
+  const h=Math.sin(x/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(y/2)**2;return 2*R*Math.asin(Math.sqrt(h));}
+function fmt(m){const mi=m/1609.34; return mi<0.1? Math.round(m*3.281)+' ft' : mi.toFixed(mi<10?1:0)+' mi';}
+function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function label(c){return `${esc(c.st)}`;}
+function seg(c){return `entre ${esc(c.a)} y ${esc(c.b)}`;}
+
+// ---------- map ----------
+try{
+  map=L.map('map',{zoomControl:false}).setView([34.08,-118.38],10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  CAMS.forEach(c=>{
+    const col=c.s==='live'?'#2fbf71':'#f5a524';
+    L.circleMarker([c.lat,c.lng],{radius:6,color:'#000',weight:1,fillColor:col,fillOpacity:.95})
+     .bindPopup(`<b>${label(c)}</b><br>${seg(c)}<br>Límite ${c.mph} mph · ${STAT[c.s]}`).addTo(map);
+  });
+}catch(e){$('map').style.display='none';}
+
+// ---------- full list ----------
+function renderAll(q=''){
+  q=q.trim().toLowerCase();
+  const rows=CAMS.filter(c=>!q||(c.st+' '+c.a+' '+c.b).toLowerCase().includes(q))
+    .sort((x,y)=>x.st.localeCompare(y.st));
+  $('all').innerHTML=rows.map(c=>`<li data-id="${c.id}"><div><div class="s">${label(c)}<span class="tag ${c.s}">${STAT[c.s]}</span></div><div class="m">${seg(c)} · Distrito ${c.cd}</div></div><div class="d">${c.mph} mph${me?'<br><span class="m">'+fmt(hav(me.lat,me.lng,c.lat,c.lng))+'</span>':''}</div></li>`).join('')||'<li><span class="m">Sin resultados</span></li>';
+}
+$('q').addEventListener('input',e=>renderAll(e.target.value));
+$('all').addEventListener('click',e=>{const li=e.target.closest('li[data-id]');if(!li||!map)return;
+  const c=CAMS.find(x=>x.id===li.dataset.id);map.setView([c.lat,c.lng],16);$('map').scrollIntoView({behavior:'smooth'});});
+renderAll();
+
+// ---------- alerts ----------
+function beep(n=2){try{audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+  for(let i=0;i<n;i++){const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='square';o.frequency.value=880;
+    g.gain.value=.15;o.connect(g);g.connect(audioCtx.destination);const t=audioCtx.currentTime+i*.28;o.start(t);o.stop(t+.18);} }catch(e){}}
+function say(t){if($('voice').value!=='1'||!('speechSynthesis' in window))return;
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='es-US';u.rate=1.05;speechSynthesis.speak(u);}catch(e){}}
+function vib(p){try{navigator.vibrate&&navigator.vibrate(p);}catch(e){}}
+
+function onPos(p){
+  const {latitude:lat,longitude:lng,speed,accuracy}=p.coords;
+  const prev=me; me={lat,lng,t:p.timestamp};
+  let mph=null;
+  if(speed!=null&&!isNaN(speed)&&speed>=0) mph=speed*2.23694;
+  else if(prev&&p.timestamp>prev.t){mph=hav(prev.lat,prev.lng,lat,lng)/((p.timestamp-prev.t)/1000)*2.23694;}
+  $('spd').textContent=mph==null?'—':Math.round(mph);
+  $('msg').textContent=accuracy>100?`GPS con poca precisión (±${Math.round(accuracy)} m)`:'';
+
+  const R=+$('rad').value;
+  const ds=CAMS.map(c=>({c,d:hav(lat,lng,c.lat,c.lng)})).sort((a,b)=>a.d-b.d);
+  const n=ds[0];
+  $('dist').textContent=fmt(n.d);
+  $('street').textContent=n.c.st;
+  $('seg').textContent=`entre ${n.c.a} y ${n.c.b} · ${STAT[n.c.s]}`;
+  $('lim').textContent=n.c.mph;
+  const over = mph!=null && mph>n.c.mph+10 && n.d<R;
+  $('spdbox').classList.toggle('over', mph!=null && mph>n.c.mph && n.d<R);
+
+  const hero=$('hero'); hero.classList.remove('alert','near');
+  if(n.d<R*0.5) hero.classList.add('alert'); else if(n.d<R) hero.classList.add('near');
+
+  // alert logic: once on entering radius, again at half radius; reset when far away
+  ds.forEach(({c,d})=>{
+    const lvl=alerted.get(c.id);
+    if(d>R*1.6 && lvl) alerted.delete(c.id);
+  });
+  for(const {c,d} of ds.slice(0,5)){
+    const lvl=alerted.get(c.id);
+    if(d<R && !lvl){alerted.set(c.id,'near');beep(2);vib([200,100,200]);
+      say(`Cámara de velocidad a ${fmt(d).replace('mi','millas').replace('ft','pies')}, en ${c.st}. Límite ${c.mph} millas por hora.`);}
+    else if(d<R*0.4 && lvl==='near'){alerted.set(c.id,'alert');beep(3);vib([400,100,400]);
+      say(over?`Baja la velocidad. Límite ${c.mph}.`:`Cámara justo adelante. Límite ${c.mph}.`);}
+  }
+
+  $('near').innerHTML=ds.slice(0,6).map(({c,d})=>`<li><div><div class="s">${label(c)}<span class="tag ${c.s}">${STAT[c.s]}</span></div><div class="m">${seg(c)}</div></div><div class="d">${fmt(d)}<br><span class="m">${c.mph} mph</span></div></li>`).join('');
+
+  if(map){const ll=[lat,lng];
+    if(!meMarker){meMarker=L.circleMarker(ll,{radius:9,color:'#fff',weight:3,fillColor:'#3b82f6',fillOpacity:1}).addTo(map);map.setView(ll,14);}
+    else{meMarker.setLatLng(ll);if(!map.getBounds().pad(-0.2).contains(ll))map.panTo(ll);}
+  }
+}
+function onErr(e){
+  const m={1:'Permiso de ubicación negado. Actívalo para este sitio en los ajustes del navegador.',2:'No se pudo obtener tu ubicación.',3:'El GPS tardó demasiado; reintentando…'};
+  $('msg').textContent=m[e.code]||e.message;
+}
+async function keepAwake(){try{if('wakeLock' in navigator){wakeLock=await navigator.wakeLock.request('screen');}}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(watchId!=null&&document.visibilityState==='visible')keepAwake();});
+
+$('go').addEventListener('click',()=>{
+  if(watchId!=null){navigator.geolocation.clearWatch(watchId);watchId=null;try{wakeLock&&wakeLock.release();}catch(e){}
+    $('go').textContent='▶ Iniciar';$('go').classList.remove('stop');$('st').textContent='Apagado';$('st').classList.remove('on');return;}
+  if(!('geolocation' in navigator)){$('msg').textContent='Este navegador no tiene GPS disponible.';return;}
+  if(location.protocol==='file:'){$('msg').textContent='Aviso: algunos teléfonos solo dan ubicación si la página se abre desde un sitio https.';}
+  beep(1); say('Alertas activadas'); keepAwake();
+  watchId=navigator.geolocation.watchPosition(onPos,onErr,{enableHighAccuracy:true,maximumAge:2000,timeout:15000});
+  $('go').textContent='■ Detener';$('go').classList.add('stop');$('st').textContent='Vigilando';$('st').classList.add('on');
+});
+</script>
+</body>
+</html>

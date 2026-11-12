@@ -95,7 +95,7 @@ public class MainActivity extends Activity {
 
     public class Bridge {
         @JavascriptInterface
-        public boolean start(int radius, boolean voice) {
+        public boolean start(int radius, boolean voice, String lang) {
             if (!hasLocation()) {
                 runOnUiThread(MainActivity.this::askPermissions);
                 return false;
@@ -103,6 +103,7 @@ public class MainActivity extends Activity {
             Intent i = new Intent(MainActivity.this, CameraService.class);
             i.putExtra("r", radius);
             i.putExtra("v", voice);
+            i.putExtra("l", lang);
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(i);
             else startService(i);
             return true;

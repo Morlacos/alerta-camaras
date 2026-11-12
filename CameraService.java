@@ -40,6 +40,7 @@ public class CameraService extends Service implements LocationListener, TextToSp
 
     private int radius = 400;
     private boolean voice = true;
+    private boolean en = false;
     private TextToSpeech tts;
     private boolean ttsReady = false;
     private ToneGenerator tone;
@@ -54,8 +55,8 @@ public class CameraService extends Service implements LocationListener, TextToSp
         super.onCreate();
         nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel s = new NotificationChannel(CH_STATUS, "Estado", NotificationManager.IMPORTANCE_LOW);
-            NotificationChannel a = new NotificationChannel(CH_ALERT, "Alertas de cámara", NotificationManager.IMPORTANCE_HIGH);
+            NotificationChannel s = new NotificationChannel(CH_STATUS, "Estado / Status", NotificationManager.IMPORTANCE_LOW);
+            NotificationChannel a = new NotificationChannel(CH_ALERT, "Alertas de cámara / Camera alerts", NotificationManager.IMPORTANCE_HIGH);
             nm.createNotificationChannel(s);
             nm.createNotificationChannel(a);
         }
@@ -95,8 +96,13 @@ public class CameraService extends Service implements LocationListener, TextToSp
         if (intent != null) {
             radius = intent.getIntExtra("r", radius);
             voice = intent.getBooleanExtra("v", voice);
+            String l = intent.getStringExtra("l");
+            if (l != null && l.equals("en") != en) {
+                en = l.equals("en");
+                applyTtsLang();
+            }
         }
-        Notification note = buildStatus("Buscando señal de GPS…");
+        Notification note = buildStatus(L("Buscando señal de GPS…", "Looking for GPS signal…"));
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(NID, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
         } else {
@@ -118,10 +124,23 @@ public class CameraService extends Service implements LocationListener, TextToSp
     @Override
     public void onInit(int status) {
         if (status == TextToSpeech.SUCCESS && tts != null) {
+            ttsReady = true;
+            applyTtsLang();
+            say(L("Alertas de cámaras activadas", "Camera alerts on"));
+        }
+    }
+
+    private String L(String es, String english) {
+        return en ? english : es;
+    }
+
+    private void applyTtsLang() {
+        if (tts == null || !ttsReady) return;
+        if (en) {
+            tts.setLanguage(Locale.US);
+        } else {
             int res = tts.setLanguage(new Locale("es", "US"));
             if (res < 0) tts.setLanguage(new Locale("es"));
-            ttsReady = true;
-            say("Alertas de cámaras activadas");
         }
     }
 
@@ -142,10 +161,10 @@ public class CameraService extends Service implements LocationListener, TextToSp
         else v.vibrate(pattern, -1);
     }
 
-    private static String fmt(float m) {
+    private String fmt(float m) {
         double mi = m / 1609.34;
-        if (mi < 0.1) return Math.round(m * 3.281) + " pies";
-        return String.format(Locale.US, "%.1f millas", mi);
+        if (mi < 0.1) return Math.round(m * 3.281) + L(" pies", " feet");
+        return String.format(Locale.US, "%.1f", mi) + L(" millas", " miles");
     }
 
     private static String fmtShort(float m) {
@@ -182,20 +201,22 @@ public class CameraService extends Service implements LocationListener, TextToSp
                 level.put(i, 1);
                 beep(2);
                 vibrate(new long[]{0, 200, 100, 200});
-                say("Cámara de velocidad a " + fmt(d[i]) + ", en " + street[i] + ". Límite " + limit[i] + " millas por hora.");
+                say(L("Cámara de velocidad a " + fmt(d[i]) + ", en " + street[i] + ". Límite " + limit[i] + " millas por hora.",
+                        "Speed camera in " + fmt(d[i]) + ", on " + street[i] + ". Limit " + limit[i] + " miles per hour."));
                 alertNotification(i, d[i]);
             } else if (lv == 1 && d[i] < radius * 0.4f) {
                 level.put(i, 2);
                 beep(3);
                 vibrate(new long[]{0, 400, 100, 400});
-                say(over ? "Baja la velocidad. Límite " + limit[i] + "." : "Cámara justo adelante. Límite " + limit[i] + ".");
+                say(over ? L("Baja la velocidad. Límite ", "Slow down. Limit ") + limit[i] + "."
+                         : L("Cámara justo adelante. Límite ", "Camera just ahead. Limit ") + limit[i] + ".");
             }
         }
         long now = System.currentTimeMillis();
         if (now - lastNotif > 3000) {
             lastNotif = now;
-            String sp = mph >= 0 ? " · Tú: " + Math.round(mph) + " mph" : "";
-            nm.notify(NID, buildStatus(street[best] + " a " + fmtShort(d[best]) + " · Límite " + limit[best] + sp));
+            String sp = mph >= 0 ? L(" · Tú: ", " · You: ") + Math.round(mph) + " mph" : "";
+            nm.notify(NID, buildStatus(street[best] + L(" a ", " in ") + fmtShort(d[best]) + L(" · Límite ", " · Limit ") + limit[best] + sp));
         }
     }
 
@@ -212,7 +233,7 @@ public class CameraService extends Service implements LocationListener, TextToSp
 
     private Notification buildStatus(String text) {
         return builder(CH_STATUS)
-                .setContentTitle("Vigilando cámaras de velocidad")
+                .setContentTitle(L("Vigilando cámaras de velocidad", "Watching for speed cameras"))
                 .setContentText(text)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
@@ -221,8 +242,8 @@ public class CameraService extends Service implements LocationListener, TextToSp
 
     private void alertNotification(int i, float dist) {
         Notification.Builder b = builder(CH_ALERT)
-                .setContentTitle("📷 Cámara a " + fmtShort(dist) + " · Límite " + limit[i])
-                .setContentText(street[i] + " entre " + from[i] + " y " + to[i])
+                .setContentTitle(L("📷 Cámara a ", "📷 Camera in ") + fmtShort(dist) + L(" · Límite ", " · Limit ") + limit[i])
+                .setContentText(street[i] + L(" entre ", " between ") + from[i] + L(" y ", " and ") + to[i])
                 .setAutoCancel(true)
                 .setTimeoutAfter(60000);
         if (Build.VERSION.SDK_INT < 26) b.setPriority(Notification.PRIORITY_HIGH);
@@ -232,7 +253,7 @@ public class CameraService extends Service implements LocationListener, TextToSp
     @Override public void onStatusChanged(String p, int s, Bundle e) { }
     @Override public void onProviderEnabled(String p) { }
     @Override public void onProviderDisabled(String p) {
-        nm.notify(NID, buildStatus("El GPS está apagado. Actívalo para recibir avisos."));
+        nm.notify(NID, buildStatus(L("El GPS está apagado. Actívalo para recibir avisos.", "GPS is off. Turn it on to get alerts.")));
     }
 
     @Override
